@@ -193,6 +193,9 @@ reporting or the Eclipse Foundation security team — and which versions receive
   any output length: 0 made every `Sum` panic on the empty MAC, and a negative length reached the
   token as a huge `CK_ULONG`. Lengths outside 1 to the hash's full size are now rejected with
   `errInvalidMACLength`. The size table is tested against Go's own hash implementations.
+- **CBC `CryptBlocks` on empty input** is a no-op, as it is for crypto/cipher's block modes. It
+  used to pass the empty slice to the token, and on SoftHSM2 panicked with
+  `CKR_ARGUMENTS_BAD`.
 - Key enumeration no longer aborts on a key type the package cannot represent
   ([#68](https://github.com/eclipse-keypont/crypto11/issues/68), reported by
   [@Knacktus](https://github.com/Knacktus) and independently run into by

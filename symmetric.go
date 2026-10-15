@@ -223,11 +223,10 @@ var Ciphers = map[int]*SymmetricCipher{
 
 // SecretKey contains a reference to a loaded PKCS#11 symmetric key object.
 //
-// A *SecretKey implements the cipher.Block interface, allowing it be used
-// as the argument to cipher.NewCBCEncrypter and similar methods.
-// For bulk operation this is very inefficient;
-// using NewCBCEncrypterCloser, NewCBCEncrypter or NewCBC from this package is
-// much faster.
+// A *SecretKey is not a cipher.Block. Its methods run whole operations on the
+// token: NewCBCEncrypterCloser and NewCBCDecrypterCloser (or NewCBCEncrypter
+// and NewCBCDecrypter, which return a plain cipher.BlockMode) for CBC, NewGCM
+// for AES-GCM, and NewHMAC for HMAC.
 type SecretKey struct {
 	pkcs11Object
 

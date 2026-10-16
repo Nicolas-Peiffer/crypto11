@@ -46,6 +46,10 @@ func exportRSAPublicKey(session *pkcs11Session, pubHandle pkcs11.ObjectHandle) (
 	}
 	var modulus = new(big.Int)
 	modulus.SetBytes(exported[0].Value)
+	// An RSA modulus is the product of two odd primes: a zero or even one is not a key.
+	if modulus.Sign() <= 0 || modulus.Bit(0) == 0 {
+		return nil, errMalformedRSAPublicKey
+	}
 	var bigExponent = new(big.Int)
 	bigExponent.SetBytes(exported[1].Value)
 	if bigExponent.BitLen() > 32 {
@@ -490,8 +494,21 @@ func (priv *pkcs11PrivateKeyRSA) Decrypt(_ io.Reader, ciphertext []byte, options
 		}
 		return err
 	})
+	var decryptErr *rsaDecryptError
+	if errors.As(err, &decryptErr) {
+		return nil, rsa.ErrDecryption
+	}
 	return plaintext, err
 }
+
+// rsaDecryptError is a failure of C_Decrypt itself. It carries the token's reason as far as the
+// session pool, which has to see it to retire a broken session, and Decrypt then reports
+// rsa.ErrDecryption, as crypto/rsa does. Which error the token gave (bad padding, wrong length,
+// a general error) is what a padding oracle is built from.
+type rsaDecryptError struct{ cause error }
+
+func (e *rsaDecryptError) Error() string { return e.cause.Error() }
+func (e *rsaDecryptError) Unwrap() error { return e.cause }
 
 func decryptPKCS1v15(session *pkcs11Session, key *pkcs11PrivateKeyRSA, ciphertext []byte, sessionKeyLen int) ([]byte, error) {
 	if sessionKeyLen != 0 {
@@ -503,15 +520,7 @@ func decryptPKCS1v15(session *pkcs11Session, key *pkcs11PrivateKeyRSA, ciphertex
 	}
 	plaintext, err := session.ctx.Decrypt(session.handle, ciphertext)
 	if err != nil {
-		// The token's reason — bad padding, wrong length — is exactly what a
-		// padding oracle is built from. Collapse it to the error crypto/rsa
-		// itself uses, unless the session is what failed: that one has to stay
-		// visible so the pool can recycle it.
-		var p11Err pkcs11.Error
-		if errors.As(err, &p11Err) && (p11Err == pkcs11.CKR_ENCRYPTED_DATA_INVALID || p11Err == pkcs11.CKR_ENCRYPTED_DATA_LEN_RANGE) {
-			return nil, rsa.ErrDecryption
-		}
-		return nil, err
+		return nil, &rsaDecryptError{err}
 	}
 	return plaintext, nil
 }
@@ -541,7 +550,11 @@ func decryptOAEP(session *pkcs11Session, key *pkcs11PrivateKeyRSA, ciphertext []
 	if err != nil {
 		return nil, err
 	}
-	return session.ctx.Decrypt(session.handle, ciphertext)
+	plaintext, err := session.ctx.Decrypt(session.handle, ciphertext)
+	if err != nil {
+		return nil, &rsaDecryptError{err}
+	}
+	return plaintext, nil
 }
 
 func hashToPKCS11(hashFunction crypto.Hash) (hashAlg uint, mgfAlg uint, hashLen uint, err error) {
@@ -683,6 +696,33 @@ func (priv *pkcs11PrivateKeyRSA) Sign(_ io.Reader, digest []byte, opts crypto.Si
 	if err != nil {
 		return nil, err
 	}
+	if err := checkRSASignature(priv.pubKey, digest, signature, opts); err != nil {
+		return nil, err
+	}
+	return signature, nil
+}
 
-	return signature, err
+// errRSASignatureCheck is returned when a signature the token produced does not verify.
+var errRSASignatureCheck = errors.New("crypto11: RSA signature from the token does not verify; it was not returned")
+
+// checkRSASignature verifies a signature the token returned before it is released. An RSA-CRT
+// signature computed with a fault, in the token's hardware or software, reveals the private key to
+// anyone who holds it and the public key, so one that does not verify is never returned. A key
+// found without its public half, or one shorter than the 1024 bits crypto/rsa will verify with,
+// is not checked.
+func checkRSASignature(pub crypto.PublicKey, digest, signature []byte, opts crypto.SignerOpts) error {
+	rpub, ok := pub.(*rsa.PublicKey)
+	if !ok || rpub == nil || rpub.N.BitLen() < 1024 {
+		return nil
+	}
+	var err error
+	if o, ok := opts.(*rsa.PSSOptions); ok {
+		err = rsa.VerifyPSS(rpub, o.Hash, digest, signature, &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthAuto, Hash: o.Hash})
+	} else {
+		err = rsa.VerifyPKCS1v15(rpub, opts.HashFunc(), digest, signature)
+	}
+	if err != nil {
+		return errRSASignatureCheck
+	}
+	return nil
 }

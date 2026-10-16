@@ -64,6 +64,22 @@ func TestSelectPublicHalf(t *testing.T) {
 	})
 }
 
+func TestSPKIPublicKey(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	require.NoError(t, err)
+	ecdhKey, err := key.PublicKey.ECDH()
+	require.NoError(t, err)
+
+	got, err := spkiPublicKey(der)
+	require.NoError(t, err)
+	assert.Equal(t, ecdhKey.Bytes(), got)
+
+	_, err = spkiPublicKey(append(der, 0))
+	assert.Error(t, err, "trailing data")
+}
+
 // plantPublicKey creates a public key object carrying id and label for pub, as any session on
 // the token can, logged in or not. It returns the object's handle.
 func plantPublicKey(t *testing.T, ctx *Context, id, label []byte, pub crypto.PublicKey) pkcs11.ObjectHandle {

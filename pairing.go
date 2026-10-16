@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/asn1"
 	"fmt"
 	"math/big"
 
@@ -35,7 +36,9 @@ var errAmbiguousPublicHalf = fmt.Errorf("%w: candidates carry different public k
 //   - any private key may carry CKA_PUBLIC_KEY_INFO, the DER SubjectPublicKeyInfo of its public
 //     half;
 //   - otherwise, if the key may sign without a context-specific login, one test signature over
-//     random data is verified under each candidate.
+//     random data is verified under each candidate;
+//   - ML-KEM keys are checked by encapsulating to the candidate and decapsulating with the
+//     private key (see mlkemPairVerifier).
 //
 // A candidate proven to belong to another key is never used. When nothing can be proven, the
 // candidates are accepted only if they all carry the same key.
@@ -292,4 +295,20 @@ func findCertificatesByID(session *pkcs11Session, id []byte) ([]*x509.Certificat
 		}
 	}
 	return certs, nil
+}
+
+// spkiPublicKey returns the subjectPublicKey bits of a DER SubjectPublicKeyInfo.
+func spkiPublicKey(der []byte) ([]byte, error) {
+	var spki struct {
+		Algorithm asn1.RawValue
+		PublicKey asn1.BitString
+	}
+	rest, err := asn1.Unmarshal(der, &spki)
+	if err != nil {
+		return nil, err
+	}
+	if len(rest) > 0 {
+		return nil, fmt.Errorf("%d bytes of trailing data after SubjectPublicKeyInfo", len(rest))
+	}
+	return spki.PublicKey.RightAlign(), nil
 }

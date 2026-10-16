@@ -86,20 +86,6 @@ func findKeys(session *pkcs11Session, id []byte, label []byte, keyclass *uint, k
 	return handles, nil
 }
 
-// Find a key object.  For asymmetric keys this only finds one half so
-// callers will call it twice. Returns nil if the key does not exist on the token.
-func findKey(session *pkcs11Session, id []byte, label []byte, keyclass *uint, keytype *uint) (obj *pkcs11.ObjectHandle, err error) {
-	handles, err := findKeys(session, id, label, keyclass, keytype)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(handles) == 0 {
-		return nil, nil
-	}
-	return &handles[0], nil
-}
-
 func (c *Context) getKeyPair(session *pkcs11Session, privHandle *pkcs11.ObjectHandle) (pubHandle *pkcs11.ObjectHandle, keyType uint, priv *pkcs11PrivateKey, certificate *x509.Certificate, pub crypto.PublicKey, err error) {
 	attributes := []*pkcs11.Attribute{
 		pkcs11.NewAttribute(pkcs11.CKA_ID, nil),

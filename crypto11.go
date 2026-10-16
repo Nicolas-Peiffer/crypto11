@@ -701,15 +701,21 @@ func loadConfigFromFile(configLocation string) (*Config, error) {
 		return nil, fmt.Errorf("could not decode config file: %w", err)
 	}
 
-	// A file that carries the PIN is a credential and has to be protected
-	// like one. The check is on the open file, not the path, so it cannot be
-	// raced. Windows file modes do not express this and are not checked.
-	if config.Pin != "" && runtime.GOOS != "windows" {
+	// The file names the library Configure loads into this process, so anyone
+	// who can write to it can run code here, PIN or not. A file that carries
+	// the PIN is also a credential and has to be protected like one. The checks
+	// are on the open file, not the path, so they cannot be raced. Windows file
+	// modes do not express this and are not checked.
+	if runtime.GOOS != "windows" {
 		info, err := file.Stat()
 		if err != nil {
 			return nil, fmt.Errorf("could not stat config file: %w", err)
 		}
-		if mode := info.Mode().Perm(); mode&0o077 != 0 {
+		mode := info.Mode().Perm()
+		if mode&0o022 != 0 {
+			return nil, fmt.Errorf("config file %s is writable by other users (mode %04o); restrict writing to its owner (chmod go-w)", configLocation, mode)
+		}
+		if config.Pin != "" && mode&0o077 != 0 {
 			return nil, fmt.Errorf("config file %s holds a PIN but is readable by other users (mode %04o); restrict it to its owner (chmod 600) or move the PIN out of the file", configLocation, mode)
 		}
 	}

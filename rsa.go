@@ -351,10 +351,11 @@ func (c *Context) FindRSAKeyPair(id []byte, label []byte) (SignerDecrypter, erro
 // FindRSAKeyPairs retrieves all matching asymmetric RSA key pairs, or a nil slice if none can be
 // found.
 // At least one of id and label must be specified.
-// Only private keys that have a non-empty CKA_ID will be found, as this is required to locate the
-// matching public key.
-// If the private key is found, but the public key with a corresponding CKA_ID is not, the key is
-// not returned because we cannot implement crypto.Signer or SignerDecrypter without the public key.
+// The public half is a public key object, or failing that a certificate, carrying the private
+// key's CKA_ID (and CKA_LABEL). Any session on the token can create such objects, so each one is
+// checked against the private key and one holding a different key is never used. If no public
+// half is found, the key is not returned because we cannot implement crypto.Signer or
+// SignerDecrypter without the public key.
 func (c *Context) FindRSAKeyPairs(id []byte, label []byte) (signer []SignerDecrypter, err error) {
 	if c.closed.Get() {
 		return nil, errClosed
@@ -386,10 +387,11 @@ func (c *Context) FindRSAKeyPairs(id []byte, label []byte) (signer []SignerDecry
 // none can be found.
 // The given attributes are matched against the private half only. Then the public half with a
 // matching CKA_ID and CKA_LABEL values is found.
-// Only private keys that have a non-empty CKA_ID will be found, as this is required to locate the
-// matching public key.
-// If the private key is found, but the public key with a corresponding CKA_ID is not, the key is
-// not returned because we cannot implement crypto.Signer or SignerDecrypter without the public key.
+// The public half is a public key object, or failing that a certificate, carrying the private
+// key's CKA_ID (and CKA_LABEL). Any session on the token can create such objects, so each one is
+// checked against the private key and one holding a different key is never used. If no public
+// half is found, the key is not returned because we cannot implement crypto.Signer or
+// SignerDecrypter without the public key.
 // Private keys that are not RSA are skipped.
 func (c *Context) FindRSAKeyPairsWithAttributes(attributes AttributeSet) (signer []SignerDecrypter, err error) {
 	if c.closed.Get() {
@@ -444,10 +446,11 @@ func (c *Context) FindRSAKeyPairsWithAttributes(attributes AttributeSet) (signer
 // SignerDecrypter, so this is the one-call form of "give me everything on this token I can decrypt
 // with".
 //
-// Only private keys that have a non-empty CKA_ID will be found, as this is required to locate the
-// matching public key.
-// If the private key is found, but the public key with a corresponding CKA_ID is not, the key is
-// not returned because we cannot implement crypto.Signer or SignerDecrypter without the public key.
+// The public half is a public key object, or failing that a certificate, carrying the private
+// key's CKA_ID (and CKA_LABEL). Any session on the token can create such objects, so each one is
+// checked against the private key and one holding a different key is never used. If no public
+// half is found, the key is not returned because we cannot implement crypto.Signer or
+// SignerDecrypter without the public key.
 // Private keys that are not RSA are skipped.
 func (c *Context) FindAllRSAKeyPairs() ([]SignerDecrypter, error) {
 	if c.closed.Get() {

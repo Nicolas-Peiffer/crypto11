@@ -177,6 +177,25 @@ reporting or the Eclipse Foundation security team — and which versions receive
 
 ### Fixed
 
+- **`Delete` on a key pair without a public key object.** `FindKeyPair` takes the public half
+  from a certificate when the token holds no public key object. `Delete` on such a pair destroyed
+  the private key and then returned `CKR_OBJECT_HANDLE_INVALID` for the public object that does
+  not exist, so a successful deletion was reported as a failure. It now returns nil and leaves
+  the certificate, a separate object, for `DeleteCertificate`.
+- **RSA-PSS options are checked before reaching the token.** A negative `PSSOptions.SaltLength`
+  other than the two sentinels made `Sign` panic, since pkcs11-go's `NewPSSParams` panics on a
+  negative salt. It is now an error wrapping `errUnsupportedRSAOptions`, as crypto/rsa makes it.
+  An explicit salt longer than the modulus can carry is `rsa.ErrMessageTooLong`, again as in
+  crypto/rsa, and a digest whose length is not the hash's size is an error rather than something
+  left to the token, matching the PKCS#1 v1.5 path.
+- **HMAC.** `NewHMAC` reported a `BlockSize` of 64 for `CKM_SHA384_HMAC` and
+  `CKM_SHA384_HMAC_GENERAL`; SHA-384's block size is 128. For a `_GENERAL` mechanism it accepted
+  any output length: 0 made every `Sum` panic on the empty MAC, and a negative length reached the
+  token as a huge `CK_ULONG`. Lengths outside 1 to the hash's full size are now rejected with
+  `errInvalidMACLength`. The size table is tested against Go's own hash implementations.
+- **CBC `CryptBlocks` on empty input** is a no-op, as it is for crypto/cipher's block modes. It
+  used to pass the empty slice to the token, and on SoftHSM2 panicked with
+  `CKR_ARGUMENTS_BAD`.
 - Key enumeration no longer aborts on a key type the package cannot represent
   ([#68](https://github.com/eclipse-keypont/crypto11/issues/68), reported by
   [@Knacktus](https://github.com/Knacktus) and independently run into by
@@ -270,6 +289,21 @@ reporting or the Eclipse Foundation security team — and which versions receive
   export data (version 5 is greater than the maximum supported version 4) and fails the
   scan with an import error. Move back to a tagged release once one ships
   `x/tools` >= v0.50.0.
+
+### Deprecated
+
+- **The `Cka*` attribute constants.** They were a hand-copied list of `CKA_*` values that had
+  fallen behind the specification: 111 of the 160 attributes in the PKCS#11 v3.2 header, missing
+  `CKA_UNIQUE_ID`, `CKA_PROFILE_ID`, `CKA_SEED`, `CKA_PUBLIC_CRC64_VALUE` and the validation and
+  trust attributes. The pkcs11-go binding's `cryptoki` package is generated from that header
+  and defines all of them, so each `Cka*` constant is now defined from the binding's constant of
+  the same name, keeping its `AttributeType` type (`CkaLabel = AttributeType(pkcs11.CKA_LABEL)`),
+  and marked deprecated. Existing code compiles and behaves as before; new code should use
+  `pkcs11.CKA_*` directly, which `AttributeSet.Set` and every other `AttributeType` parameter
+  already accept. crypto11 itself now uses the binding's
+  constants throughout. `AttributeSet.String` still renders the old `Cka*` names; switching it to
+  the binding's generated names (`cryptoki.AttributeName`) waits on the pkcs11-go release that
+  adds them.
 
 ### CI/CD & supply chain
 
